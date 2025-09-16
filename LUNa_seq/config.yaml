@@ -1,0 +1,181 @@
+# —— demultiplex.py settings ——
+demultiplex:
+  fastq_path:      "Yourdata.fastq.gz"  # input FASTQ (gz ok)
+  demux_table:     "Demultiplexed.csv"           # CSV with columns: ID, BC
+  output_dir:      "./sample"                    # output root
+  seqkit_cmd:      "seqkit"                      # seqkit executable
+  search_range:    "1:20"                        # window to search BC (no 5' anchoring)
+  threads:         8                              # parallel threads for seqkit (-j)
+  output_forward:  false                           # keep forward_<ID>.fastq with true
+  output_reverse:  false                           # keep reverse_<ID>.fastq with true
+  output_unmatched: true                         # not write unmatched.fastq with false
+
+
+# —— raw_data_classification.py settings ——
+
+raw_data_classification:
+  enabled: true   # Set to false or omit this block to skip this step.
+
+ref_folder: "../ref"        # Folder containing per-sample reference FASTA (same level as the script)
+
+filter1:
+  min_self:            0.90   # Min fraction of the read length covered by a contiguous match
+  min_ref:             0.95   # Min fraction of the reference length covered by a contiguous match
+  indel_tol:           50     # Max tolerated indel length per event (<= still considered contiguous)
+  complete_cov_ratio:  0.95   # threshold for "complete coverage" within on-target set
+
+ltr:
+  "5": "cagtggcgcccgaacagggacctgaaagcg"   # 5′ LTR (Ψ-side) sequence; case-insensitive
+  "3": "cgcctccccgcctggaattcgagctcggta"   # 3′ LTR (WPRE-side) sequence; case-insensitive
+
+contamination:
+  scan_length:    200    # Bases to scan from both ends to find LTR motifss
+  max_candidates: 50     # Max candidate reads to collect as seeds per stage
+  mismatch_max:   3      # Max edit distance allowed for fuzzy motif matching (mismatch/ins/del)
+  min_self:       0.90   # Self-match fraction threshold during contamination/recombination filtering
+  min_ref:        0.95   # Reference-match fraction threshold during contamination/recombination filtering
+  max_stages:     50     # Max number of iterative stages
+
+# —— umi_grouped.py settings —— 
+
+umi:
+  prefix:         "GCCCAATCTG"         # 5' anchor before UMI (uppercase)
+  suffix:         "CAGTGGCGCC"         # immediately after UMI (uppercase)
+  max_errors:     1                    # allowed mismatches for prefix/suffix
+  pattern:        "HBNHVNBDNHVNBDNHBD" # IUPAC for target-length UMI (N=ACGT allowed)
+  lengths:        [18, 17, 19, 16, 20, 15, 21]  # UMI lengths to try
+  target_length:  18                   # target UMI length (pattern applied here)
+  prefix_window:  48                   # 5' search window for prefix
+  suffix_window:  48                   # RC-side window (keep default)
+
+input:
+  dir: "sample"                       # root dir containing per-sample subfolders
+  patterns:                            # paths are relative to each sample folder
+    - "{folder}.fastq"                 # example: exact filename in the sample folder
+    # - "{folder}_fully_on_target_proviral_reads.fastq"       # example if filenames include sample folder name
+
+output:
+  write_umi_fastq:      true           # Enable per-UMI FASTQ output (dir: umi_fastq_<suffix>_files/)
+  write_filtered_fastq: false          # Disable merged filtered_seqs.fastq output
+  umi_fastq_dir:        "umi_fastq_*_files"
+  filtered_fastq:       "filtered_seqs.fastq"
+
+
+
+# ——  consensus_abPOA.py  settings —— 
+sample_root: "./sample"
+input_pattern: "umi_fastq_*_files/*.fastq"     # Search under: <sample_root>/*/<pattern>
+max_reads_per_file: 20                         # abPOA will take the longest top-N reads per FASTQ (if fewer, take all)
+thresholds: [5]            # Only include FASTQs whose read count >= any of these thresholds. One output FASTA per threshold, named: consensus_reads_ge_<threshold>.fasta
+# Optional: If you keep references in sample folders, can be logged (not used by abPOA)
+# reference_glob: "*.fasta"
+
+
+
+# —— consensus_classification.py settings —— 
+
+ref_folder: "../ref"          # Folder containing per-sample reference FASTA (same level as the script)
+consensus_glob: "consensus_reads_ge_*.fasta"  # Match multiple consensus inputs per sample
+
+# Filtering thresholds
+filter1:
+  min_self:            0.90   # Min fraction of the sequence length covered by a contiguous match
+  min_ref:             0.95   # Min fraction of the reference length covered by a contiguous match
+  indel_tol:           50     # Max tolerated indel length per event (<= still counted as contiguous)
+  complete_cov_ratio:  0.95   # Threshold for "complete coverage" within the on-target set
+
+# Motifs (case-insensitive)
+ltr:
+  "5": "cagtggcgcccgaacagggacctgaaagcg"   # 5′ LTR (Ψ-side)
+  "3": "cgcctccccgcctggaattcgagctcggta"   # 3′ LTR (WPRE-side)
+
+contamination:
+  scan_length:    200    # Bases to scan from both ends to find motifs
+  max_candidates: 50     # Max candidate seeds per stage
+  mismatch_max:   3      # Max edit distance allowed for fuzzy motif matching
+  min_self:       0.90   # Contamination-stage self-match threshold
+  min_ref:        0.95   # Contamination-stage ref-match threshold
+  max_stages:     50     # Max number of iterative stages
+
+# Minimap2 preset for consensus/contigs
+minimap2_args_consensus: "-a -x asm5 -z 1000,200 --secondary=no"
+
+
+
+# —— variation_analysis.py settings ——       
+variation_analysis:
+  samples_dir: sample                # Folder containing per-sample subfolders
+  ref_pattern: "{folder}.fasta"      # Reference filename pattern per sample (inside each sample folder)
+  # Each pattern specifies its own minimap2 parameters.
+  query_inputs:
+    # - pattern: "fully_on_target_proviral_reads.fastq"
+    #   minimap2_args: "-a -x map-ont"    # raw ONT-like reads → map-ont
+    - pattern: "fully_on_target_proviral_reads__*.fasta"
+      minimap2_args: "-a -x asm5"       # abPOA consensus/contigs → asm5
+
+  # Default when not individually specified
+  minimap2_args: "-a"
+
+  log: "variation.log"
+
+
+
+
+visualization_igv:
+  enabled: true
+  ref_folder: "ref"         # when <ID>.fasta is missing inside sample/<ID>, copy from <config_dir>/ref/<ID>.fasta
+  artifact_dir: "visualization"   # BAM/session/log go to visualization/<ID> to keep sample folders clean
+  max_reads: 2000           # downsampling cap; set 0 or very large to effectively disable
+
+  minimap2_args: "-a -x map-ont"
+  threads: 8                # null/omit to let tools auto-pick
+  igv:
+    cmd: "igv.sh"           # falls back to $IGV_CMD or $IGV_SH if not set
+    use_xvfb: true          # wrap IGV with xvfb-run -a
+    sleep_ms: 15000         # wait after load before actions
+    timeout_sec: 900        # per IGV run timeout
+
+  merge:
+    raw:
+      include_glob: "contaminant_or_recombinant_ref_*.fasta"
+      exclude: ["__consensus_reads_ge_5"]   # CRITICAL: exclude consensus files from raw merge
+      out: "contaminant_or_recombination_judgement_raw_data.fasta"
+    consensus:
+      include_glob: "contaminant_or_recombinant_ref_*__consensus_reads_ge_5.fasta"
+      out: "contaminant_or_recombination_judgement_consensus.fasta"
+
+  # Six inputs → snapshots. {ID} will be replaced with sample folder name.
+  inputs:
+    - { path: "{ID}.fastq",                                                snapshot: "{ID}_raw_data.png" }
+    - { path: "fully_on_target_proviral_reads.fastq",                      snapshot: "fully_on_target_raw_data.png" }
+    - { path: "contaminant_or_recombination_judgement_raw_data.fasta",     snapshot: "contaminant_or_recombination_judgement_raw_data.png" }
+    - { path: "consensus_reads_ge_5.fasta",                                snapshot: "{ID}_consensus.png" }
+    - { path: "fully_on_target_proviral_reads__consensus_reads_ge_5.fasta",snapshot: "{ID}_fully_on_target_consensus.png" }
+    - { path: "contaminant_or_recombination_judgement_consensus.fasta",    snapshot: "contaminant_or_recombination_judgement_consensus.png" }
+
+
+
+rcl_test:
+  enabled: true
+  # Query FASTA (~5.7 kb). Relative paths are resolved against the directory of this config.yaml.
+  query_fasta: "ref/RCL_probe.fasta"
+
+  # Positivity rule parameters
+  threshold: 100       # min effective block length (bp)
+  indel_tol: 5         # tolerate small I/D (bp) inside a block
+  mapq_min: 0          # discard alignments with MAPQ < mapq_min (0 = keep all)
+
+  # High-recall minimap2 settings; override if desired
+  minimap2_args: "-a -x asm5 -N 100000 --secondary=yes -p 0"
+
+  # Targets to scan per sample. PNGs are saved directly in sample/<ID>/
+  targets:
+    - label: "cr"
+      path: "contaminant_or_recombination_judgement_raw_data.fasta"
+      hits_tsv: "RCL_from_cr_hits.tsv"
+      plot_png: "RCL_from_cr.png"
+
+    - label: "non_specific"
+      path: "non_specific_residual_products__consensus_reads_ge_5.fasta"
+      hits_tsv: "RCL_from_non_specific_hits.tsv"
+      plot_png: "RCL_from_non_specific.png"
