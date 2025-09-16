@@ -31,7 +31,7 @@ Use the classic solver and the conda-forge/bioconda channels.
 conda create -y -n luna-seq -c conda-forge -c bioconda \
   python=3.11 minimap2=2.28 samtools=1.20 abpoa=1.5.4 openjdk=17 \
   biopython=1.83 pysam='0.23.*' regex pyyaml=6.0.2 matplotlib=3.10.1 \
-  pandas=2.2.3 tqdm=4.* openpyxl=3.1.* seaborn=0.13.*
+  pandas=2.2.3 tqdm=4.* openpyxl=3.1.* seaborn=0.13.* pyarrow xlrd altair=5.* streamlit
 # 2.2 Activate
 conda activate luna-seq
 
